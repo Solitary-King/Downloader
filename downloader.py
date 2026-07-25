@@ -6,7 +6,6 @@ import threading
 from flask import Flask
 
 # ==================== FFMPEG AUTO-SETUP ====================
-# Render-এ ffmpeg এরর ফিক্স করার জন্য
 import static_ffmpeg
 static_ffmpeg.add_paths()
 
@@ -230,11 +229,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown"
         )
 
-    elif data.startswith("dlvideo_"):
+    elif data == "dlvideo_format":
         await query.message.delete()
         await process_media_download(update, context, format_type="video")
 
-    elif data.startswith("dlaudio_"):
+    elif data == "dlaudio_format":
         await query.message.delete()
         await process_media_download(update, context, format_type="audio")
 
@@ -415,7 +414,6 @@ async def process_media_download(update: Update, context: ContextTypes.DEFAULT_T
         def check_and_download():
             out_tmpl = f"downloads/{user_id}_%(id)s.%(ext)s"
             
-            # YouTube & Media Download Options
             ydl_opts_dl = {
                 'outtmpl': out_tmpl,
                 'quiet': True,
@@ -430,15 +428,16 @@ async def process_media_download(update: Update, context: ContextTypes.DEFAULT_T
                 }
             }
 
-            # Cookies ফাইল থাকলে অটোমেটিক এড হবে
+            # Cookies File Check
             if os.path.exists("cookies.txt"):
                 ydl_opts_dl['cookiefile'] = "cookies.txt"
 
-            # Format config
+            # Format Selector Logic
             if format_type == "video":
-                ydl_opts_dl['format'] = 'b/bestvideo+bestaudio/best'
+                ydl_opts_dl['format'] = 'bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4] / bestvideo+bestaudio/best'
+                ydl_opts_dl['merge_output_format'] = 'mp4'
             else:
-                ydl_opts_dl['format'] = 'bestaudio/best'
+                ydl_opts_dl['format'] = 'ba/best'
 
             with yt_dlp.YoutubeDL(ydl_opts_dl) as ydl_dl:
                 dl_info = ydl_dl.extract_info(url, download=True)
