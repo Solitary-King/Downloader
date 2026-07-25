@@ -32,21 +32,18 @@ if not os.path.exists("downloads"):
     os.makedirs("downloads")
 
 # ==================== CONFIGURATION ====================
-BOT_TOKEN = "8914943378:AAH5uJ-IZYZa6ighXT1OUxglfGFKkPnwKm4"  # আপনার বট টোকেন দিন
-ADMIN_ID = 6535070545  # আপনার টেলিগ্রাম Numeric ID দিন
+BOT_TOKEN = "8914943378:AAH5uJ-IZYZa6ighXT1OUxglfGFKkPnwKm4"  # আপনার টেলিগ্রাম বট টোকেন
+ADMIN_ID = 6535070545  # আপনার টেলিগ্রাম Numeric ID
 DB_NAME = "bot_data.db"
 
 logging.basicConfig(level=logging.INFO)
 
-# Menu Button Texts
 MENU_BUTTONS = ["📥 Download Video", "👤 Profile", "👑 Admin Panel"]
 
 # ==================== DATABASE SETUP ====================
 def init_db():
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    
-    # Simple Users Table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
@@ -54,15 +51,12 @@ def init_db():
             total_downloads INTEGER DEFAULT 0
         )
     ''')
-    
-    # Channels Table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS channels (
             channel_id TEXT PRIMARY KEY,
             channel_url TEXT
         )
     ''')
-    
     conn.commit()
     conn.close()
 
@@ -115,7 +109,6 @@ def remove_channel_db(channel_id):
 def increment_download(user_id):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    # নিশ্চিত করা হচ্ছে যেন ইউজার ডাটাবেজে থাকে
     cursor.execute("INSERT OR IGNORE INTO users (user_id, username, total_downloads) VALUES (?, 'NoUsername', 0)", (user_id,))
     cursor.execute("UPDATE users SET total_downloads = COALESCE(total_downloads, 0) + 1 WHERE user_id = ?", (user_id,))
     conn.commit()
@@ -289,8 +282,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         elif text == "👤 Profile":
             add_user(user_id, update.effective_user.username or update.effective_user.first_name)
-            
-            # সরাসরি ডাউনলোড সংখ্যা কোয়েরি করে আনা হচ্ছে (ফিক্সড)
             total_dl = get_user_downloads(user_id)
             username_val = update.effective_user.username or update.effective_user.first_name
             username_display = f"@{username_val}" if update.effective_user.username else username_val
@@ -418,9 +409,11 @@ async def process_media_download(update: Update, context: ContextTypes.DEFAULT_T
         def check_and_download():
             out_tmpl = f"downloads/{user_id}_%(id)s.%(ext)s"
             
+            # YouTube Bot Bypass Client Engine Configuration
             extractor_args_config = {
                 'youtube': {
-                    'player_client': ['android', 'ios', 'mweb']
+                    'player_client': ['tv', 'mweb', 'web_creator', 'android'],
+                    'player_skip': ['webpage', 'configs']
                 },
                 'tiktok': {
                     'webpage_download': True,
@@ -428,24 +421,23 @@ async def process_media_download(update: Update, context: ContextTypes.DEFAULT_T
                 }
             }
 
+            ydl_opts_dl = {
+                'outtmpl': out_tmpl,
+                'quiet': True,
+                'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                'extractor_args': extractor_args_config,
+                'nocheckcertificate': True,
+                'ignoreerrors': False,
+            }
+
+            # If cookies.txt exists in project folder, use it automatically
+            if os.path.exists("cookies.txt"):
+                ydl_opts_dl['cookiefile'] = "cookies.txt"
+
             if format_type == "video":
-                ydl_opts_dl = {
-                    'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-                    'outtmpl': out_tmpl,
-                    'quiet': True,
-                    'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'extractor_args': extractor_args_config,
-                    'nocheckcertificate': True
-                }
+                ydl_opts_dl['format'] = 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
             else:
-                ydl_opts_dl = {
-                    'format': 'bestaudio/best',
-                    'outtmpl': out_tmpl,
-                    'quiet': True,
-                    'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'extractor_args': extractor_args_config,
-                    'nocheckcertificate': True
-                }
+                ydl_opts_dl['format'] = 'bestaudio/best'
 
             with yt_dlp.YoutubeDL(ydl_opts_dl) as ydl_dl:
                 dl_info = ydl_dl.extract_info(url, download=True)
@@ -473,7 +465,6 @@ async def process_media_download(update: Update, context: ContextTypes.DEFAULT_T
                     parse_mode="Markdown"
                 )
 
-        # ডাউনলোড ডাটাবেজে সঠিক নিয়মে যুক্ত করা হচ্ছে
         increment_download(user_id)
 
         if filename and os.path.exists(filename): 
