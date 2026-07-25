@@ -3,6 +3,8 @@ import sqlite3
 import logging
 import asyncio
 import threading
+import html
+import requests
 from flask import Flask
 
 # ==================== FFMPEG AUTO-SETUP ====================
@@ -31,6 +33,21 @@ def home():
 def run_web_server():
     port = int(os.environ.get("PORT", 8080))
     web_app.run(host='0.0.0.0', port=port)
+
+# Render Server-কে জাগিয়ে রাখার জন্য Keep-Alive লুপ
+def keep_alive_ping():
+    import time
+    time.sleep(10)
+    render_url = os.environ.get("RENDER_EXTERNAL_URL")  # Render অটো এই এনভায়রনমেন্ট ভেরিয়েবল দেয়
+    if not render_url:
+        render_url = "http://localhost:8080"
+        
+    while True:
+        try:
+            requests.get(render_url)
+        except Exception:
+            pass
+        time.sleep(180)  # প্রতি ৩ মিনিট পর পর পিং করবে
 
 # Downloads ডিরেক্টরি নিশ্চিতকরণ
 if not os.path.exists("downloads"):
@@ -182,16 +199,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard.append([InlineKeyboardButton("✅ Check Join", callback_data="check_join")])
         
         await update.message.reply_text(
-            "⚠️ **বটটি ব্যবহার করতে আপনাকে অবশ্যই আমাদের সকল চ্যানেলে জয়েন করতে হবে!**\n\nনিচের লিংকগুলোতে জয়েন করে 'Check Join' বাটনে চাপ দিন:",
+            "⚠️ <b>বটটি ব্যবহার করতে আপনাকে অবশ্যই আমাদের সকল চ্যানেলে জয়েন করতে হবে!</b>\n\nনিচের লিংকগুলোতে জয়েন করে 'Check Join' বাটনে চাপ দিন:",
             reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode="Markdown"
+            parse_mode="HTML"
         )
         return
 
     await update.message.reply_text(
-        f"👋 **স্বাগতম {user.first_name}!**\n\nনিচের বাটন চাপুন অথবা সরাসরি (TikTok, Instagram, Facebook) ভিডিও লিংক পাঠাল ডাউনলোড করুন:",
+        f"👋 <b>স্বাগতম {html.escape(user.first_name)}!</b>\n\nনিচের বাটন চাপুন অথবা সরাসরি (TikTok, Instagram, Facebook) ভিডিও লিংক পাঠালে ডাউনলোড শুরু হবে:",
         reply_markup=main_reply_keyboard(user.id),
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
 
 # ==================== INLINE CALLBACK ====================
@@ -216,17 +233,17 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 
             await context.bot.send_message(
                 chat_id=user_id,
-                text="✅ **অভিনন্দন! আপনার ভেরিফিকেশন সফল হয়েছে।**\n\nএখন যেকোনো সোশ্যাল মিডিয়ার লিংক পাঠান (YouTube ব্যতীত):",
+                text="✅ <b>অভিনন্দন! আপনার ভেরিফিকেশন সফল হয়েছে।</b>\n\nএখন যেকোনো সোশ্যাল মিডিয়ার লিংক পাঠান (YouTube ব্যতীত):",
                 reply_markup=main_reply_keyboard(user_id),
-                parse_mode="Markdown"
+                parse_mode="HTML"
             )
             return
 
     elif data.startswith("plat_"):
         platform = data.split("_")[1].capitalize()
         await query.message.reply_text(
-            f"📱 **নির্বাচিত প্ল্যাটফর্ম:** {platform}\n\n🔗 অনুগ্রহ করে আপনার **{platform}** ভিডিও লিংকটি এখানে পাঠান।",
-            parse_mode="Markdown"
+            f"📱 <b>নির্বাচিত প্ল্যাটফর্ম:</b> {platform}\n\n🔗 অনুগ্রহ করে আপনার <b>{platform}</b> ভিডিও লিংকটি এখানে পাঠান।",
+            parse_mode="HTML"
         )
 
     elif data == "dlvideo_format":
@@ -240,29 +257,29 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif user_id == ADMIN_ID:
         if data == "adm_stats":
             tot_users, tot_dl = get_stats()
-            await query.message.reply_text(f"📊 **বট পরিসংখ্যান (এডমিন ভিউ)**\n\n👥 মোট ইউজার: {tot_users}\n📥 মোট ডাউনলোড: {tot_dl}", parse_mode="Markdown")
+            await query.message.reply_text(f"📊 <b>বট পরিসংখ্যান (এডমিন ভিউ)</b>\n\n👥 মোট ইউজার: {tot_users}\n📥 মোট ডাউনলোড: {tot_dl}", parse_mode="HTML")
         
         elif data == "adm_listch":
             channels = get_channels()
             if not channels:
                 await query.message.reply_text("ℹ️ কোনো চ্যানেল যুক্ত করা নেই।")
                 return
-            msg = "📢 **ফোর্স জয়েন চ্যানেল তালিকা:**\n\n"
+            msg = "📢 <b>ফোর্স জয়েন চ্যানেল তালিকা:</b>\n\n"
             for ch_id, ch_url in channels:
-                msg += f"• `{ch_id}` ➡️ [Link]({ch_url})\n"
-            await query.message.reply_text(msg, parse_mode="Markdown")
+                msg += f"• <code>{ch_id}</code> ➡️ <a href='{ch_url}'>Link</a>\n"
+            await query.message.reply_text(msg, parse_mode="HTML")
 
         elif data == "adm_addch":
             context.user_data['state'] = 'ADD_CHANNEL'
             await query.message.reply_text(
-                "✍️ চ্যানেলের **ID/Username** এবং **লিংক** একই সাথে স্পেস (Space) দিয়ে পাঠান।\n\n"
-                "**যেমন:**\n`@solitary_hacker https://t.me/solitary_hacker`",
-                parse_mode="Markdown"
+                "✍️ চ্যানেলের <b>ID/Username</b> এবং <b>লিংক</b> একই সাথে স্পেস (Space) দিয়ে পাঠান।\n\n"
+                "<b>যেমন:</b>\n<code>@solitary_hacker https://t.me/solitary_hacker</code>",
+                parse_mode="HTML"
             )
 
         elif data == "adm_remch":
             context.user_data['state'] = 'REM_CHANNEL'
-            await query.message.reply_text("✍️ রিমুভ করতে চাওয়া চ্যানেলের ID বা Username দিন (যেমন: `@solitary_hacker`):")
+            await query.message.reply_text("✍️ রিমুভ করতে চাওয়া চ্যানেলের ID বা Username দিন (যেমন: <code>@solitary_hacker</code>):", parse_mode="HTML")
 
         elif data == "adm_bcast":
             context.user_data['state'] = 'BROADCAST'
@@ -279,9 +296,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if text == "📥 Download Video":
             await update.message.reply_text(
-                "👇 **নিচে থেকে প্ল্যাটফর্ম নির্বাচন করুন অথবা সরাসরি TikTok, Instagram, Facebook লিংক পাঠান:**",
+                "👇 <b>নিচে থেকে প্ল্যাটফর্ম নির্বাচন করুন অথবা সরাসরি TikTok, Instagram, Facebook লিংক পাঠান:</b>",
                 reply_markup=platform_inline_keyboard(),
-                parse_mode="Markdown"
+                parse_mode="HTML"
             )
             return
 
@@ -289,16 +306,16 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             add_user(user_id, update.effective_user.username or update.effective_user.first_name)
             total_dl = get_user_downloads(user_id)
             username_val = update.effective_user.username or update.effective_user.first_name
-            username_display = f"@{username_val}" if update.effective_user.username else username_val
+            username_display = f"@{html.escape(username_val)}" if update.effective_user.username else html.escape(username_val)
 
             profile_msg = (
-                f"👤 **আপনার প্রোফাইল**\n\n"
-                f"🆔 **ইউজার আইডি:** `{user_id}`\n"
-                f"👤 **ইউজারনেম:** {username_display}\n"
-                f"⚡ **স্ট্যাটাস:** 🟢 আনলিমিটেড ফ্রি ইউজার\n"
-                f"📥 **মোট ডাউনলোড:** {total_dl}"
+                f"👤 <b>আপনার প্রোফাইল</b>\n\n"
+                f"🆔 <b>ইউজার আইডি:</b> <code>{user_id}</code>\n"
+                f"👤 <b>ইউজারনেম:</b> {username_display}\n"
+                f"⚡ <b>স্ট্যাটাস:</b> 🟢 আনলিমিটেড ফ্রি ইউজার\n"
+                f"📥 <b>মোট ডাউনলোড:</b> {total_dl}"
             )
-            await update.message.reply_text(profile_msg, parse_mode="Markdown")
+            await update.message.reply_text(profile_msg, parse_mode="HTML")
             return
 
         elif text == "👑 Admin Panel" and user_id == ADMIN_ID:
@@ -307,7 +324,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton("➕ Add Channel", callback_data="adm_addch"), InlineKeyboardButton("🗑️ Remove Channel", callback_data="adm_remch")],
                 [InlineKeyboardButton("📜 List Channels", callback_data="adm_listch")]
             ])
-            await update.message.reply_text("👑 **এডমিন কন্ট্রোল প্যানেল**\n\nনিচের অপশনগুলো দিয়ে বট পরিচালনা করুন:", reply_markup=admin_kbd, parse_mode="Markdown")
+            await update.message.reply_text("👑 <b>এডমিন কন্ট্রোল প্যানেল</b>\n\nনিচের অপশনগুলো দিয়ে বট পরিচালনা করুন:", reply_markup=admin_kbd, parse_mode="HTML")
             return
 
     # Admin Inputs
@@ -316,15 +333,15 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parts = text.split()
             if len(parts) >= 2 and parts[1].startswith("http"):
                 add_channel_db(parts[0], parts[1])
-                await update.message.reply_text(f"✅ **চ্যানেল সফলভাবে যুক্ত করা হয়েছে!**\n\n🔹 ID: `{parts[0]}`\n🔗 Link: {parts[1]}", parse_mode="Markdown")
+                await update.message.reply_text(f"✅ <b>চ্যানেল সফলভাবে যুক্ত করা হয়েছে!</b>\n\n🔹 ID: <code>{parts[0]}</code>\n🔗 Link: {parts[1]}", parse_mode="HTML")
             else:
-                await update.message.reply_text("❌ **ভুল ফরমেট!** স্পেস দিয়ে চ্যানেল আইডি এবং সঠিক লিংক দিন।")
+                await update.message.reply_text("❌ <b>ভুল ফরমেট!</b> স্পেস দিয়ে চ্যানেল আইডি এবং সঠিক লিংক দিন।")
             context.user_data.clear()
             return
 
         elif state == 'REM_CHANNEL':
             remove_channel_db(text)
-            await update.message.reply_text(f"🗑️ চ্যানেল `{text}` সফলভাবে রিমুভ করা হয়েছে!", parse_mode="Markdown")
+            await update.message.reply_text(f"🗑️ চ্যানেল <code>{html.escape(text)}</code> সফলভাবে রিমুভ করা হয়েছে!", parse_mode="HTML")
             context.user_data.clear()
             return
 
@@ -336,17 +353,17 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             conn.close()
 
             sent, failed = 0, 0
-            msg = await update.message.reply_text("📢 **ব্রডকাস্ট চালু রয়েছে...**")
+            msg = await update.message.reply_text("📢 <b>ব্রডকাস্ট চালু রয়েছে...</b>", parse_mode="HTML")
 
             for u in users:
                 try:
-                    await context.bot.send_message(chat_id=u[0], text=f"📢 **বিজ্ঞপ্তি:**\n\n{text}", parse_mode="Markdown")
+                    await context.bot.send_message(chat_id=u[0], text=f"📢 <b>বিজ্ঞপ্তি:</b>\n\n{html.escape(text)}", parse_mode="HTML")
                     sent += 1
                     await asyncio.sleep(0.04)
                 except Exception:
                     failed += 1
 
-            await msg.edit_text(f"✅ **ব্রডকাস্ট সম্পন্ন!**\n\nসফল: {sent}\nব্যর্থ: {failed}", parse_mode="Markdown")
+            await msg.edit_text(f"✅ <b>ব্রডকাস্ট সম্পন্ন!</b>\n\nসফল: {sent}\nব্যর্থ: {failed}", parse_mode="HTML")
             context.user_data.clear()
             return
 
@@ -361,8 +378,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # YouTube Link Check & Block
         if "youtube.com" in text or "youtu.be" in text:
             await update.message.reply_text(
-                "❌ **ইউটিউব সাপোর্টেড নয়!**\n\nআমাদের বটের মাধ্যমে আপনি **TikTok, Instagram, Facebook** ইত্যাদির ভিডিও ডাউনলোড করতে পারবেন। অনুগ্রহ করে অন্য কোনো প্ল্যাটফর্মের লিংক দিন।",
-                parse_mode="Markdown"
+                "❌ <b>ইউটিউব সাপোর্টেড নয়!</b>\n\nআমাদের বটের মাধ্যমে আপনি <b>TikTok, Instagram, Facebook</b> ইত্যাদির ভিডিও ডাউনলোড করতে পারবেন। অনুগ্রহ করে অন্য কোনো প্ল্যাটফর্মের লিংক দিন।",
+                parse_mode="HTML"
             )
             return
 
@@ -376,9 +393,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ])
         
         await update.message.reply_text(
-            "🎬 **আপনি ফাইলটি কী ফরমেটে ডাউনলোড করতে চান?**\n\nনিচের যেকোনো একটি ফরমেট নির্বাচন করুন:",
+            "🎬 <b>আপনি ফাইলটি কী ফরমেটে ডাউনলোড করতে চান?</b>\n\nনিচের যেকোনো একটি ফরমেট নির্বাচন করুন:",
             reply_markup=format_keyboard,
-            parse_mode="Markdown"
+            parse_mode="HTML"
         )
 
 # ==================== MEDIA DOWNLOADER PROCESSOR ====================
@@ -397,21 +414,22 @@ async def process_media_download(update: Update, context: ContextTypes.DEFAULT_T
 
     status_msg = await context.bot.send_message(
         chat_id=user_id,
-        text=f"🔄 [⚙️       ] **০%** - {format_label} অ্যানালাইজ করা হচ্ছে..."
+        text=f"🔄 [⚙️       ] <b>০%</b> - {format_label} অ্যানালাইজ করা হচ্ছে...",
+        parse_mode="HTML"
     )
 
     async def update_animation():
         frames = [
-            f"⏳ [██▒▒▒▒▒▒▒▒] **২০%** {format_label} লিংক প্রসেস করা হচ্ছে...",
-            f"⏳ [████▒▒▒▒▒▒] **৪০%** সার্ভারে কানেক্ট করা হচ্ছে...",
-            f"⏳ [██████▒▒▒▒] **৬০%** {format_label} স্ট্রিম খোঁজা হচ্ছে...",
-            "⏳ [████████▒▒] **৮০%** ফাইল প্রসেস করা হচ্ছে...",
-            "📤 [██████████] **১০০%** বটে ফাইল আপলোড হচ্ছে..."
+            f"⏳ [██▒▒▒▒▒▒▒▒] <b>২০%</b> {format_label} লিংক প্রসেস করা হচ্ছে...",
+            f"⏳ [████▒▒▒▒▒▒] <b>৪০%</b> সার্ভারে কানেক্ট করা হচ্ছে...",
+            f"⏳ [██████▒▒▒▒] <b>৬০%</b> {format_label} স্ট্রিম খোঁজা হচ্ছে...",
+            f"⏳ [████████▒▒] <b>৮০%</b> ফাইল প্রসেস করা হচ্ছে...",
+            f"📤 [██████████] <b>১০০%</b> বটে ফাইল আপলোড হচ্ছে..."
         ]
         for frame in frames:
             await asyncio.sleep(1.0)
             try: 
-                await status_msg.edit_text(frame, parse_mode="Markdown")
+                await status_msg.edit_text(frame, parse_mode="HTML")
             except Exception: 
                 pass
 
@@ -429,6 +447,7 @@ async def process_media_download(update: Update, context: ContextTypes.DEFAULT_T
                 'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
                 'nocheckcertificate': True,
                 'ignoreerrors': False,
+                'socket_timeout': 30, # নেটওয়ার্ক ড্রপ এড়াতে টাইম-আউট বাড়ানো হলো
             }
 
             if format_type == "video":
@@ -445,22 +464,25 @@ async def process_media_download(update: Update, context: ContextTypes.DEFAULT_T
         filename, title = await asyncio.to_thread(check_and_download)
         anim_task.cancel()
 
-        await status_msg.edit_text(f"📤 **{format_label} প্রস্তুত! পাঠানো হচ্ছে...**", parse_mode="Markdown")
+        await status_msg.edit_text(f"📤 <b>{format_label} প্রস্তুত! পাঠানো হচ্ছে...</b>", parse_mode="HTML")
+
+        # টাইটেল নিরাপদ করতে HTML escape ব্যবহার করা হয়েছে
+        safe_title = html.escape(title)
 
         with open(filename, 'rb') as mf:
             if format_type == "video":
                 await context.bot.send_video(
                     chat_id=user_id,
                     video=mf,
-                    caption=f"✅ **{title}**\n\n🤖 Powered by @itsAdminRimon",
-                    parse_mode="Markdown"
+                    caption=f"✅ <b>{safe_title}</b>\n\n🤖 Powered by @itsAdminRimon",
+                    parse_mode="HTML"
                 )
             else:
                 await context.bot.send_audio(
                     chat_id=user_id,
                     audio=mf,
-                    caption=f"🎵 **{title}**\n\n🤖 Powered by @itsAdminRimon",
-                    parse_mode="Markdown"
+                    caption=f"🎵 <b>{safe_title}</b>\n\n🤖 Powered by @itsAdminRimon",
+                    parse_mode="HTML"
                 )
 
         increment_download(user_id)
@@ -471,15 +493,26 @@ async def process_media_download(update: Update, context: ContextTypes.DEFAULT_T
 
     except Exception as e:
         anim_task.cancel()
-        await status_msg.edit_text(f"❌ **ডাউনলোড ব্যর্থ হয়েছে!**\n\nকারণ: `{str(e)}`", parse_mode="Markdown")
+        safe_err = html.escape(str(e))
+        await status_msg.edit_text(f"❌ <b>ডাউনলোড ব্যর্থ হয়েছে!</b>\n\nকারণ: <code>{safe_err}</code>", parse_mode="HTML")
         if filename and os.path.exists(filename):
             os.remove(filename)
 
 # ==================== MAIN FUNCTION ====================
 def main():
+    # Flask ওয়েব সার্ভার চালু
     threading.Thread(target=run_web_server, daemon=True).start()
+    
+    # Render Server-কে সজাগ রাখার Ping Thread
+    threading.Thread(target=keep_alive_ping, daemon=True).start()
 
-    request = HTTPXRequest(connect_timeout=30.0, read_timeout=60.0)
+    # Time-out বাড়াতে HTTPXRequest কনফিগারেশন আপডেট করা হলো (১২০ সেকেন্ড)
+    request = HTTPXRequest(
+        connect_timeout=60.0,
+        read_timeout=120.0,
+        write_timeout=120.0,
+        pool_timeout=120.0
+    )
     bot_app = Application.builder().token(BOT_TOKEN).request(request).build()
 
     bot_app.add_handler(CommandHandler("start", start))
