@@ -17,7 +17,6 @@ from telegram.request import HTTPXRequest
 import yt_dlp
 
 # ==================== RENDER PORT CHECK SERVER ====================
-# Render Web Service-কে Live রাখার জন্য ডামি সার্ভার
 web_app = Flask(__name__)
 
 @web_app.route('/')
@@ -348,7 +347,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("buy_"):
         _, size, cost = data.split("_")
         size, cost = int(size), int(cost)
+        
         u = get_user(user_id)
+        if not u:
+            add_user(user_id, query.from_user.username or query.from_user.first_name)
+            u = get_user(user_id)
 
         if u[2] < cost:
             await query.answer("❌ আপনার পর্যাপ্ত কয়েন নেই! রেফার করে কয়েন আয় করুন।", show_alert=True)
@@ -414,11 +417,12 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text in MENU_BUTTONS:
         context.user_data.clear()
         
+        # 🟢 1. SAFE PROFILE HANDLER
         if text == "👤 Profile":
             u = get_user(user_id)
             if not u:
-                await update.message.reply_text("❌ প্রোফাইল ডেটা পাওয়া যায়নি! অনুগ্রহ করে /start দিন।")
-                return
+                add_user(user_id, update.effective_user.username or update.effective_user.first_name)
+                u = get_user(user_id)
 
             conn = sqlite3.connect(DB_NAME)
             c = conn.cursor()
@@ -426,16 +430,21 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ref_count = c.fetchone()[0]
             conn.close()
 
-            username_display = f"@{u[1]}" if u[1] and u[1] not in ["None", "NoUsername"] else "ইউজারনেম সেট করা নেই"
+            username_val = u[1] if len(u) > 1 and u[1] else "NoUsername"
+            username_display = f"@{username_val}" if username_val not in ["None", "NoUsername"] else "ইউজারনেম সেট করা নেই"
+            
+            coins = u[2] if len(u) > 2 else 0
+            limit_mb = u[6] if len(u) > 6 else 20
+            total_dl = u[5] if len(u) > 5 else 0
 
             profile_msg = (
                 f"👤 **আপনার প্রোফাইল**\n\n"
                 f"🆔 **ইউজার আইডি:** `{u[0]}`\n"
                 f"👤 **ইউজারনেম:** {username_display}\n"
-                f"💰 **কয়েন ব্যালেন্স:** {u[2]} Coins\n"
-                f"⚡ **ডাউনলোড প্যাক:** {u[6]} MB\n"
+                f"💰 **কয়েন ব্যালেন্স:** {coins} Coins\n"
+                f"⚡ **ডাউনলোড প্যাক:** {limit_mb} MB\n"
                 f"👥 **সফল রেফার:** {ref_count}\n"
-                f"📥 **মোট ডাউনলোড:** {u[5]}"
+                f"📥 **মোট ডাউনলোড:** {total_dl}"
             )
             await update.message.reply_text(profile_msg, parse_mode="Markdown")
             return
@@ -463,6 +472,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif text == "💎 Premium Pack":
             packs = get_packages()
             u = get_user(user_id)
+            if not u:
+                add_user(user_id, update.effective_user.username or update.effective_user.first_name)
+                u = get_user(user_id)
+
             msg = f"💎 **প্রিমিয়াম প্যাক সার্ভিস**\n\nবর্তমান লিমিট: **{u[6]} MB**\nবর্তমান কয়েন ব্যালেন্স: **{u[2]} Coins**\n\nকয়েন খরচ করে আপনার ডাউনলোডের এমবি লিমিট বাড়িয়ে নিন:\n\n"
             
             keyboard = []
@@ -600,6 +613,10 @@ async def process_media_download(update: Update, context: ContextTypes.DEFAULT_T
         return
 
     u = get_user(user_id)
+    if not u:
+        add_user(user_id, query.from_user.username or query.from_user.first_name)
+        u = get_user(user_id)
+
     format_label = "ভিডিও" if format_type == "video" else "অডিও"
 
     status_msg = await context.bot.send_message(
@@ -713,7 +730,6 @@ async def process_media_download(update: Update, context: ContextTypes.DEFAULT_T
 
 # ==================== MAIN FUNCTION ====================
 def main():
-    # 🟢 Render-এর জন্য ব্যাকগ্রাউন্ডে ওয়েব সার্ভার চালু
     threading.Thread(target=run_web_server, daemon=True).start()
 
     request = HTTPXRequest(connect_timeout=30.0, read_timeout=60.0)
