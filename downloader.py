@@ -39,23 +39,19 @@ DB_NAME = "bot_data.db"
 logging.basicConfig(level=logging.INFO)
 
 # Menu Button Texts
-MENU_BUTTONS = ["👤 Profile", "👥 Refer", "📥 Download Video", "💎 Premium Pack", "👑 Admin Panel"]
+MENU_BUTTONS = ["📥 Download Video", "👤 Profile", "👑 Admin Panel"]
 
 # ==================== DATABASE SETUP ====================
 def init_db():
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     
-    # Users Table
+    # Simple Users Table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
             username TEXT,
-            coins INTEGER DEFAULT 0,
-            referred_by INTEGER,
-            ref_completed INTEGER DEFAULT 0,
-            total_downloads INTEGER DEFAULT 0,
-            max_download_limit INTEGER DEFAULT 20
+            total_downloads INTEGER DEFAULT 0
         )
     ''')
     
@@ -67,106 +63,31 @@ def init_db():
         )
     ''')
     
-    # Packages Table
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS packages (
-            pack_name TEXT PRIMARY KEY,
-            size_mb INTEGER,
-            cost_coins INTEGER
-        )
-    ''')
-    
-    # Settings Table
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS settings (
-            key TEXT PRIMARY KEY,
-            value INTEGER
-        )
-    ''')
-    
-    # Default Values
-    cursor.execute("INSERT OR IGNORE INTO packages VALUES ('50MB', 50, 10)")
-    cursor.execute("INSERT OR IGNORE INTO packages VALUES ('100MB', 100, 20)")
-    cursor.execute("INSERT OR IGNORE INTO packages VALUES ('150MB', 150, 30)")
-    cursor.execute("INSERT OR IGNORE INTO packages VALUES ('200MB', 200, 40)")
-    cursor.execute("INSERT OR IGNORE INTO settings VALUES ('refer_coins', 3)")
-    
     conn.commit()
     conn.close()
 
 init_db()
 
 # ==================== DATABASE HELPERS ====================
-def get_user(user_id):
+def get_user_downloads(user_id):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
-    user = cursor.fetchone()
+    cursor.execute("SELECT total_downloads FROM users WHERE user_id = ?", (user_id,))
+    row = cursor.fetchone()
     conn.close()
-    return user
+    return row[0] if row and row[0] is not None else 0
 
-def add_user(user_id, username, referred_by=None):
+def add_user(user_id, username):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,))
     if not cursor.fetchone():
         uname = username if username else "NoUsername"
         cursor.execute(
-            "INSERT INTO users (user_id, username, referred_by, ref_completed) VALUES (?, ?, ?, 0)",
-            (user_id, uname, referred_by)
+            "INSERT INTO users (user_id, username, total_downloads) VALUES (?, ?, 0)",
+            (user_id, uname)
         )
         conn.commit()
-    conn.close()
-
-def get_refer_coins():
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute("SELECT value FROM settings WHERE key = 'refer_coins'")
-    row = cursor.fetchone()
-    conn.close()
-    return row[0] if row else 3
-
-def set_refer_coins_db(coins):
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('refer_coins', ?)", (coins,))
-    conn.commit()
-    conn.close()
-
-async def complete_referral(user_id, context: ContextTypes.DEFAULT_TYPE):
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute("SELECT referred_by, ref_completed FROM users WHERE user_id = ?", (user_id,))
-    row = cursor.fetchone()
-    
-    if row and row[0] and row[1] == 0:
-        referrer_id = row[0]
-        ref_coins = get_refer_coins()
-        cursor.execute("UPDATE users SET ref_completed = 1 WHERE user_id = ?", (user_id,))
-        cursor.execute("UPDATE users SET coins = coins + ? WHERE user_id = ?", (ref_coins, referrer_id))
-        conn.commit()
-        conn.close()
-
-        try:
-            await context.bot.send_message(
-                chat_id=referrer_id,
-                text=(
-                    f"🎉 **নতুন সফল রেফারেল!**\n\n"
-                    f"একজন নতুন ইউজার আপনার রেফারেল লিংক ব্যবহার করে জয়েন করেছেন।\n"
-                    f"💰 আপনি পেয়েছেন: **+{ref_coins} Coins**"
-                ),
-                parse_mode="Markdown"
-            )
-        except Exception as e:
-            logging.error(f"Referral Notification Error: {e}")
-    else:
-        conn.close()
-
-def update_user_coins(user_id, coins):
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute("UPDATE users SET coins = ? WHERE user_id = ?", (coins, user_id))
-    conn.commit()
     conn.close()
 
 def get_channels():
@@ -191,32 +112,12 @@ def remove_channel_db(channel_id):
     conn.commit()
     conn.close()
 
-def get_packages():
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute("SELECT pack_name, size_mb, cost_coins FROM packages")
-    packs = cursor.fetchall()
-    conn.close()
-    return packs
-
-def set_package_price(pack_name, cost_coins):
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute("UPDATE packages SET cost_coins = ? WHERE pack_name = ?", (cost_coins, pack_name))
-    conn.commit()
-    conn.close()
-
-def update_user_limit(user_id, new_limit, cost):
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute("UPDATE users SET max_download_limit = ?, coins = coins - ? WHERE user_id = ?", (new_limit, cost, user_id))
-    conn.commit()
-    conn.close()
-
 def increment_download(user_id):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    cursor.execute("UPDATE users SET total_downloads = total_downloads + 1 WHERE user_id = ?", (user_id,))
+    # নিশ্চিত করা হচ্ছে যেন ইউজার ডাটাবেজে থাকে
+    cursor.execute("INSERT OR IGNORE INTO users (user_id, username, total_downloads) VALUES (?, 'NoUsername', 0)", (user_id,))
+    cursor.execute("UPDATE users SET total_downloads = COALESCE(total_downloads, 0) + 1 WHERE user_id = ?", (user_id,))
     conn.commit()
     conn.close()
 
@@ -226,7 +127,8 @@ def get_stats():
     cursor.execute("SELECT COUNT(*) FROM users")
     total_users = cursor.fetchone()[0]
     cursor.execute("SELECT SUM(total_downloads) FROM users")
-    total_dl = cursor.fetchone()[0] or 0
+    res = cursor.fetchone()[0]
+    total_dl = res if res is not None else 0
     conn.close()
     return total_users, total_dl
 
@@ -254,8 +156,7 @@ async def check_force_join(user_id, context: ContextTypes.DEFAULT_TYPE):
 # ==================== KEYBOARDS ====================
 def main_reply_keyboard(user_id):
     keyboard = [
-        [KeyboardButton("👤 Profile"), KeyboardButton("👥 Refer")],
-        [KeyboardButton("📥 Download Video"), KeyboardButton("💎 Premium Pack")]
+        [KeyboardButton("📥 Download Video"), KeyboardButton("👤 Profile")]
     ]
     if user_id == ADMIN_ID:
         keyboard.append([KeyboardButton("👑 Admin Panel")])
@@ -272,10 +173,8 @@ def platform_inline_keyboard():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     user = update.effective_user
-    args = context.args
-    referrer = int(args[0]) if args and args[0].isdigit() and int(args[0]) != user.id else None
 
-    add_user(user.id, user.username or user.first_name, referrer)
+    add_user(user.id, user.username or user.first_name)
 
     not_joined = await check_force_join(user.id, context)
     if not_joined:
@@ -291,10 +190,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    await complete_referral(user.id, context)
-
     await update.message.reply_text(
-        f"👋 **স্বাগতম {user.first_name}!**\n\nনিচের বাটনগুলো থেকে আপনার পছন্দ অনুযায়ী সার্ভিস বেছে নিন এবং সোশ্যাল মিডিয়ার যেকোনো ভিডিও/অডিও ডাউনলোড করুন:",
+        f"👋 **স্বাগতম {user.first_name}!**\n\nনিচের বাটন চাপুন অথবা সরাসরি যেকোনো ভিডিও লিংক পাঠিয়ে ফ্রি-তে ডাউনলোড করুন:",
         reply_markup=main_reply_keyboard(user.id),
         parse_mode="Markdown"
     )
@@ -314,8 +211,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         else:
             await query.answer("✅ ভেরিফিকেশন সফল হয়েছে!", show_alert=True)
-            await complete_referral(user_id, context)
-            
             try:
                 await query.message.delete()
             except Exception:
@@ -323,7 +218,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 
             await context.bot.send_message(
                 chat_id=user_id,
-                text="✅ **অভিনন্দন! আপনার ভেরিফিকেশন সফল হয়েছে।**\n\nএখন নিচের মেনু থেকে অপশন বেছে নিন:",
+                text="✅ **অভিনন্দন! আপনার ভেরিফিকেশন সফল হয়েছে।**\n\nএখন যেকোনো সোশ্যাল মিডিয়ার লিংক পাঠান:",
                 reply_markup=main_reply_keyboard(user_id),
                 parse_mode="Markdown"
             )
@@ -343,27 +238,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("dlaudio_"):
         await query.message.delete()
         await process_media_download(update, context, format_type="audio")
-
-    elif data.startswith("buy_"):
-        _, size, cost = data.split("_")
-        size, cost = int(size), int(cost)
-        
-        u = get_user(user_id)
-        if not u:
-            add_user(user_id, query.from_user.username or query.from_user.first_name)
-            u = get_user(user_id)
-
-        if u[2] < cost:
-            await query.answer("❌ আপনার পর্যাপ্ত কয়েন নেই! রেফার করে কয়েন আয় করুন।", show_alert=True)
-            return
-
-        update_user_limit(user_id, size, cost)
-        await query.answer("🎉 প্রিমিয়াম প্যাক অ্যাক্টিভ হয়েছে!", show_alert=True)
-        await query.message.reply_text(
-            f"✅ **প্রিমিয়াম প্যাক কেনা সফল হয়েছে!**\n\nআপনার নতুন ডাউনলোড লিমিট: **{size} MB**",
-            reply_markup=main_reply_keyboard(user_id),
-            parse_mode="Markdown"
-        )
 
     elif user_id == ADMIN_ID:
         if data == "adm_stats":
@@ -392,18 +266,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data['state'] = 'REM_CHANNEL'
             await query.message.reply_text("✍️ রিমুভ করতে চাওয়া চ্যানেলের ID বা Username দিন (যেমন: `@solitary_hacker`):")
 
-        elif data == "adm_setpack":
-            context.user_data['state'] = 'SET_PACK_NAME'
-            await query.message.reply_text("✍️ প্যাকের নাম লিখুন (যেমন: `50MB`, `100MB`, `150MB`, `200MB`):")
-
-        elif data == "adm_setcoins":
-            context.user_data['state'] = 'SET_USER_ID'
-            await query.message.reply_text("✍️ ইউজারের Telegram Numeric ID দিন যার কয়েন আপডেট করবেন:")
-
-        elif data == "adm_setref":
-            context.user_data['state'] = 'SET_REF_COINS'
-            await query.message.reply_text("✍️ প্রতি সফল রেফারে ইউজার কত কয়েন বোনাস পাবে তা লিখুন (যেমন: 5 বা 10):")
-
         elif data == "adm_bcast":
             context.user_data['state'] = 'BROADCAST'
             await query.message.reply_text("📢 সকল ইউজারের কাছে যে মেসেজ পাঠাতে চান তা লিখুন:")
@@ -417,86 +279,42 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text in MENU_BUTTONS:
         context.user_data.clear()
         
-        # 🟢 1. SAFE PROFILE HANDLER
-        if text == "👤 Profile":
-            u = get_user(user_id)
-            if not u:
-                add_user(user_id, update.effective_user.username or update.effective_user.first_name)
-                u = get_user(user_id)
-
-            conn = sqlite3.connect(DB_NAME)
-            c = conn.cursor()
-            c.execute("SELECT COUNT(*) FROM users WHERE referred_by = ? AND ref_completed = 1", (user_id,))
-            ref_count = c.fetchone()[0]
-            conn.close()
-
-            username_val = u[1] if len(u) > 1 and u[1] else "NoUsername"
-            username_display = f"@{username_val}" if username_val not in ["None", "NoUsername"] else "ইউজারনেম সেট করা নেই"
-            
-            coins = u[2] if len(u) > 2 else 0
-            limit_mb = u[6] if len(u) > 6 else 20
-            total_dl = u[5] if len(u) > 5 else 0
-
-            profile_msg = (
-                f"👤 **আপনার প্রোফাইল**\n\n"
-                f"🆔 **ইউজার আইডি:** `{u[0]}`\n"
-                f"👤 **ইউজারনেম:** {username_display}\n"
-                f"💰 **কয়েন ব্যালেন্স:** {coins} Coins\n"
-                f"⚡ **ডাউনলোড প্যাক:** {limit_mb} MB\n"
-                f"👥 **সফল রেফার:** {ref_count}\n"
-                f"📥 **মোট ডাউনলোড:** {total_dl}"
-            )
-            await update.message.reply_text(profile_msg, parse_mode="Markdown")
-            return
-
-        elif text == "👥 Refer":
-            bot_username = (await context.bot.get_me()).username
-            refer_link = f"https://t.me/{bot_username}?start={user_id}"
-            ref_coins = get_refer_coins()
-            refer_msg = (
-                f"👥 **রেফার করে কয়েন আয় করুন!**\n\n"
-                f"আপনার ইনভাইট লিংক দিয়ে বন্ধুদের জয়েন করান। তারা বট চালু করে চ্যানেলে **জয়েন সম্পন্ন করলেই** আপনি পাবেন **{ref_coins} কয়েন**!\n\n"
-                f"🔗 **আপনার ইউনিক রেফারেল লিংক:**\n`{refer_link}`"
-            )
-            await update.message.reply_text(refer_msg, parse_mode="Markdown")
-            return
-
-        elif text == "📥 Download Video":
+        if text == "📥 Download Video":
             await update.message.reply_text(
-                "👇 **নিচে থেকে প্ল্যাটফর্ম নির্বাচন করে আপনার ভিডিও ডাউনলোড করে নিন:**",
+                "👇 **নিচে থেকে প্ল্যাটফর্ম নির্বাচন করুন অথবা সরাসরি যেকোনো ভিডিও লিংক পাঠান:**",
                 reply_markup=platform_inline_keyboard(),
                 parse_mode="Markdown"
             )
             return
 
-        elif text == "💎 Premium Pack":
-            packs = get_packages()
-            u = get_user(user_id)
-            if not u:
-                add_user(user_id, update.effective_user.username or update.effective_user.first_name)
-                u = get_user(user_id)
-
-            msg = f"💎 **প্রিমিয়াম প্যাক সার্ভিস**\n\nবর্তমান লিমিট: **{u[6]} MB**\nবর্তমান কয়েন ব্যালেন্স: **{u[2]} Coins**\n\nকয়েন খরচ করে আপনার ডাউনলোডের এমবি লিমিট বাড়িয়ে নিন:\n\n"
+        elif text == "👤 Profile":
+            add_user(user_id, update.effective_user.username or update.effective_user.first_name)
             
-            keyboard = []
-            for name, size, cost in packs:
-                msg += f"🔹 **{name} প্যাক:** {size} MB সাইজ পর্যন্ত ডাউনলোড ➡️ **{cost} Coins**\n"
-                keyboard.append([InlineKeyboardButton(f"⚡ Buy {name} ({cost} Coins)", callback_data=f"buy_{size}_{cost}")])
-                
-            await update.message.reply_text(msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+            # সরাসরি ডাউনলোড সংখ্যা কোয়েরি করে আনা হচ্ছে (ফিক্সড)
+            total_dl = get_user_downloads(user_id)
+            username_val = update.effective_user.username or update.effective_user.first_name
+            username_display = f"@{username_val}" if update.effective_user.username else username_val
+
+            profile_msg = (
+                f"👤 **আপনার প্রোফাইল**\n\n"
+                f"🆔 **ইউজার আইডি:** `{user_id}`\n"
+                f"👤 **ইউজারনেম:** {username_display}\n"
+                f"⚡ **স্ট্যাটাস:** 🟢 আনলিমিটেড ফ্রি ইউজার\n"
+                f"📥 **মোট ডাউনলোড:** {total_dl}"
+            )
+            await update.message.reply_text(profile_msg, parse_mode="Markdown")
             return
 
         elif text == "👑 Admin Panel" and user_id == ADMIN_ID:
-            ref_coins = get_refer_coins()
             admin_kbd = InlineKeyboardMarkup([
                 [InlineKeyboardButton("📢 Broadcast", callback_data="adm_bcast"), InlineKeyboardButton("📊 User Stats", callback_data="adm_stats")],
                 [InlineKeyboardButton("➕ Add Channel", callback_data="adm_addch"), InlineKeyboardButton("🗑️ Remove Channel", callback_data="adm_remch")],
-                [InlineKeyboardButton("📜 List Channels", callback_data="adm_listch"), InlineKeyboardButton("⚙️ Set Pack Price", callback_data="adm_setpack")],
-                [InlineKeyboardButton("💰 Modify User Coins", callback_data="adm_setcoins"), InlineKeyboardButton(f"🎁 Set Refer Coins ({ref_coins})", callback_data="adm_setref")]
+                [InlineKeyboardButton("📜 List Channels", callback_data="adm_listch")]
             ])
             await update.message.reply_text("👑 **এডমিন কন্ট্রোল প্যানেল**\n\nনিচের অপশনগুলো দিয়ে বট পরিচালনা করুন:", reply_markup=admin_kbd, parse_mode="Markdown")
             return
 
+    # Admin Inputs
     if user_id == ADMIN_ID and state:
         if state == 'ADD_CHANNEL':
             parts = text.split()
@@ -511,51 +329,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif state == 'REM_CHANNEL':
             remove_channel_db(text)
             await update.message.reply_text(f"🗑️ চ্যানেল `{text}` সফলভাবে রিমুভ করা হয়েছে!", parse_mode="Markdown")
-            context.user_data.clear()
-            return
-
-        elif state == 'SET_REF_COINS':
-            if text.isdigit():
-                set_refer_coins_db(int(text))
-                await update.message.reply_text(f"🎁 **সফল হয়েছে!** নতুন রেফারেল বোনাস **{text} Coins** সেট করা হয়েছে।", parse_mode="Markdown")
-            else:
-                await update.message.reply_text("❌ অনুগ্রহ করে সঠিক সংখ্যা প্রদান করুন।")
-            context.user_data.clear()
-            return
-
-        elif state == 'SET_USER_ID':
-            if text.isdigit():
-                context.user_data['target_uid'] = int(text)
-                context.user_data['state'] = 'SET_USER_COINS'
-                await update.message.reply_text(f"✍️ ইউজার `{text}` এর জন্য নতুন কয়েন ব্যালেন্স লিখুন:")
-            else:
-                await update.message.reply_text("❌ সঠিক Telegram ID দিন!")
-                context.user_data.clear()
-            return
-
-        elif state == 'SET_USER_COINS':
-            if text.isdigit():
-                t_uid = context.user_data.get('target_uid')
-                update_user_coins(t_uid, int(text))
-                await update.message.reply_text(f"✅ ইউজার `{t_uid}` এর ব্যালেন্স **{text} Coins** আপডেট করা হয়েছে!", parse_mode="Markdown")
-            else:
-                await update.message.reply_text("❌ সঠিক সংখ্যা লিখুন!")
-            context.user_data.clear()
-            return
-
-        elif state == 'SET_PACK_NAME':
-            context.user_data['pack_name'] = text.upper()
-            context.user_data['state'] = 'SET_PACK_COST'
-            await update.message.reply_text(f"✍️ **{text.upper()}** প্যাকের নতুন মূল্য (কয়েনে) লিখুন:")
-            return
-
-        elif state == 'SET_PACK_COST':
-            if text.isdigit():
-                p_name = context.user_data.get('pack_name')
-                set_package_price(p_name, int(text))
-                await update.message.reply_text(f"✅ **{p_name}** প্যাকের দাম **{text} Coins** আপডেট করা হয়েছে!", parse_mode="Markdown")
-            else:
-                await update.message.reply_text("❌ সঠিক সংখ্যা লিখুন!")
             context.user_data.clear()
             return
 
@@ -581,11 +354,13 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data.clear()
             return
 
+    # Force Join Check
     not_joined = await check_force_join(user_id, context)
     if not_joined:
         await update.message.reply_text("⚠️ আপনাকে অবশ্যই প্রথমে চ্যানেলে জয়েন করতে হবে! /start দিন।")
         return
 
+    # Link Receiver
     if text.startswith("http://") or text.startswith("https://"):
         context.user_data['pending_url'] = text
         
@@ -612,10 +387,7 @@ async def process_media_download(update: Update, context: ContextTypes.DEFAULT_T
         await context.bot.send_message(chat_id=user_id, text="❌ লিংক খুঁজে পাওয়া যায়নি! আবার চেষ্টা করুন।")
         return
 
-    u = get_user(user_id)
-    if not u:
-        add_user(user_id, query.from_user.username or query.from_user.first_name)
-        u = get_user(user_id)
+    add_user(user_id, query.from_user.username or query.from_user.first_name)
 
     format_label = "ভিডিও" if format_type == "video" else "অডিও"
 
@@ -644,60 +416,44 @@ async def process_media_download(update: Update, context: ContextTypes.DEFAULT_T
     filename = None
     try:
         def check_and_download():
-            ydl_opts_info = {
-                'quiet': True,
-                'no_warnings': True,
-                'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'referer': 'https://www.tiktok.com/',
-                'extractor_args': {'tiktok': {'webpage_download': True, 'app_version': '30.0.0'}}
+            out_tmpl = f"downloads/{user_id}_%(id)s.%(ext)s"
+            
+            extractor_args_config = {
+                'youtube': {
+                    'player_client': ['android', 'ios', 'mweb']
+                },
+                'tiktok': {
+                    'webpage_download': True,
+                    'app_version': '30.0.0'
+                }
             }
-            with yt_dlp.YoutubeDL(ydl_opts_info) as ydl:
-                info = ydl.extract_info(url, download=False)
-                filesize = info.get('filesize') or info.get('filesize_approx') or 0
-                max_allowed_bytes = u[6] * 1024 * 1024
 
-                if filesize > max_allowed_bytes:
-                    video_mb = round(filesize / (1024 * 1024), 2)
-                    return None, f"LIMIT_EXCEEDED_{video_mb}", info.get('title', 'Media')
+            if format_type == "video":
+                ydl_opts_dl = {
+                    'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+                    'outtmpl': out_tmpl,
+                    'quiet': True,
+                    'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'extractor_args': extractor_args_config,
+                    'nocheckcertificate': True
+                }
+            else:
+                ydl_opts_dl = {
+                    'format': 'bestaudio/best',
+                    'outtmpl': out_tmpl,
+                    'quiet': True,
+                    'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'extractor_args': extractor_args_config,
+                    'nocheckcertificate': True
+                }
 
-                if format_type == "video":
-                    out_tmpl = f"downloads/{user_id}_%(id)s.%(ext)s"
-                    ydl_opts_dl = {
-                        'format': 'best[ext=mp4]/best',
-                        'outtmpl': out_tmpl,
-                        'quiet': True,
-                        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                        'referer': 'https://www.tiktok.com/',
-                        'extractor_args': {'tiktok': {'webpage_download': True, 'app_version': '30.0.0'}}
-                    }
-                else:
-                    out_tmpl = f"downloads/{user_id}_%(id)s.%(ext)s"
-                    ydl_opts_dl = {
-                        'format': 'bestaudio/best',
-                        'outtmpl': out_tmpl,
-                        'quiet': True,
-                        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                        'referer': 'https://www.tiktok.com/',
-                    }
+            with yt_dlp.YoutubeDL(ydl_opts_dl) as ydl_dl:
+                dl_info = ydl_dl.extract_info(url, download=True)
+                fn = ydl_dl.prepare_filename(dl_info)
+                return fn, dl_info.get('title', 'Media')
 
-                with yt_dlp.YoutubeDL(ydl_opts_dl) as ydl_dl:
-                    dl_info = ydl_dl.extract_info(url, download=True)
-                    fn = ydl_dl.prepare_filename(dl_info)
-                    return fn, "SUCCESS", dl_info.get('title', 'Media')
-
-        filename, status, title = await asyncio.to_thread(check_and_download)
+        filename, title = await asyncio.to_thread(check_and_download)
         anim_task.cancel()
-
-        if status.startswith("LIMIT_EXCEEDED"):
-            video_mb = status.split("_")[2]
-            await status_msg.edit_text(
-                f"⚠️ **ফাইল সাইজ লিমিট অতিক্রম করেছে!**\n\n"
-                f"📽️ এই ফাইলের সাইজ: **{video_mb} MB**\n"
-                f"🔒 আপনার ডাউনলোড লিমিট: **{u[6]} MB**\n\n"
-                f"💡 প্রিমিয়াম প্যাক কিনে সীমানা বাড়াতে '💎 Premium Pack' অপশনটি বেছে নিন।",
-                parse_mode="Markdown"
-            )
-            return
 
         await status_msg.edit_text(f"📤 **{format_label} প্রস্তুত! পাঠানো হচ্ছে...**", parse_mode="Markdown")
 
@@ -717,7 +473,9 @@ async def process_media_download(update: Update, context: ContextTypes.DEFAULT_T
                     parse_mode="Markdown"
                 )
 
+        # ডাউনলোড ডাটাবেজে সঠিক নিয়মে যুক্ত করা হচ্ছে
         increment_download(user_id)
+
         if filename and os.path.exists(filename): 
             os.remove(filename)
         await status_msg.delete()
