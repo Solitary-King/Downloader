@@ -409,33 +409,28 @@ async def process_media_download(update: Update, context: ContextTypes.DEFAULT_T
         def check_and_download():
             out_tmpl = f"downloads/{user_id}_%(id)s.%(ext)s"
             
-            # YouTube Bot Bypass Client Engine Configuration
-            extractor_args_config = {
-                'youtube': {
-                    'player_client': ['tv', 'mweb', 'web_creator', 'android'],
-                    'player_skip': ['webpage', 'configs']
-                },
-                'tiktok': {
-                    'webpage_download': True,
-                    'app_version': '30.0.0'
-                }
-            }
-
+            # 🛠️ Fixed Options for yt-dlp
             ydl_opts_dl = {
                 'outtmpl': out_tmpl,
                 'quiet': True,
+                'no_warnings': True,
                 'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-                'extractor_args': extractor_args_config,
                 'nocheckcertificate': True,
                 'ignoreerrors': False,
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': ['android', 'mweb', 'web_creator'],
+                    }
+                }
             }
 
-            # If cookies.txt exists in project folder, use it automatically
+            # 🍪 Cookies Support Check
             if os.path.exists("cookies.txt"):
                 ydl_opts_dl['cookiefile'] = "cookies.txt"
 
+            # 🛠️ Format fix for YouTube Shorts & normal videos
             if format_type == "video":
-                ydl_opts_dl['format'] = 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
+                ydl_opts_dl['format'] = 'b/bestvideo+bestaudio/best'
             else:
                 ydl_opts_dl['format'] = 'bestaudio/best'
 
