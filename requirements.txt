@@ -1,4 +1,5 @@
-python-telegram-bot
 yt-dlp
-httpx
+python-telegram-bot
 flask
+gunicorn
+httpx
