@@ -162,8 +162,8 @@ def main_reply_keyboard(user_id):
 
 def platform_inline_keyboard():
     keyboard = [
-        [InlineKeyboardButton("🎵 TikTok", callback_data="plat_tiktok"), InlineKeyboardButton("▶️ YouTube", callback_data="plat_youtube")],
-        [InlineKeyboardButton("📸 Instagram", callback_data="plat_instagram"), InlineKeyboardButton("📘 Facebook", callback_data="plat_facebook")]
+        [InlineKeyboardButton("🎵 TikTok", callback_data="plat_tiktok"), InlineKeyboardButton("📸 Instagram", callback_data="plat_instagram")],
+        [InlineKeyboardButton("📘 Facebook", callback_data="plat_facebook")]
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -189,7 +189,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     await update.message.reply_text(
-        f"👋 **স্বাগতম {user.first_name}!**\n\nনিচের বাটন চাপুন অথবা সরাসরি যেকোনো ভিডিও লিংক পাঠিয়ে ফ্রি-তে ডাউনলোড করুন:",
+        f"👋 **স্বাগতম {user.first_name}!**\n\nনিচের বাটন চাপুন অথবা সরাসরি (TikTok, Instagram, Facebook) ভিডিও লিংক পাঠাল ডাউনলোড করুন:",
         reply_markup=main_reply_keyboard(user.id),
         parse_mode="Markdown"
     )
@@ -216,7 +216,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 
             await context.bot.send_message(
                 chat_id=user_id,
-                text="✅ **অভিনন্দন! আপনার ভেরিফিকেশন সফল হয়েছে।**\n\nএখন যেকোনো সোশ্যাল মিডিয়ার লিংক পাঠান:",
+                text="✅ **অভিনন্দন! আপনার ভেরিফিকেশন সফল হয়েছে।**\n\nএখন যেকোনো সোশ্যাল মিডিয়ার লিংক পাঠান (YouTube ব্যতীত):",
                 reply_markup=main_reply_keyboard(user_id),
                 parse_mode="Markdown"
             )
@@ -279,7 +279,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if text == "📥 Download Video":
             await update.message.reply_text(
-                "👇 **নিচে থেকে প্ল্যাটফর্ম নির্বাচন করুন অথবা সরাসরি যেকোনো ভিডিও লিংক পাঠান:**",
+                "👇 **নিচে থেকে প্ল্যাটফর্ম নির্বাচন করুন অথবা সরাসরি TikTok, Instagram, Facebook লিংক পাঠান:**",
                 reply_markup=platform_inline_keyboard(),
                 parse_mode="Markdown"
             )
@@ -358,12 +358,20 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Link Receiver
     if text.startswith("http://") or text.startswith("https://"):
+        # YouTube Link Check & Block
+        if "youtube.com" in text or "youtu.be" in text:
+            await update.message.reply_text(
+                "❌ **ইউটিউব সাপোর্টেড নয়!**\n\nআমাদের বটের মাধ্যমে আপনি **TikTok, Instagram, Facebook** ইত্যাদির ভিডিও ডাউনলোড করতে পারবেন। অনুগ্রহ করে অন্য কোনো প্ল্যাটফর্মের লিংক দিন।",
+                parse_mode="Markdown"
+            )
+            return
+
         context.user_data['pending_url'] = text
         
         format_keyboard = InlineKeyboardMarkup([
             [
                 InlineKeyboardButton("🎥 Video (MP4)", callback_data="dlvideo_format"),
-                InlineKeyboardButton("🎵 Audio (MP3/M4A)", callback_data="dlaudio_format")
+                InlineKeyboardButton("🎵 Audio (MP3)", callback_data="dlaudio_format")
             ]
         ])
         
@@ -401,7 +409,7 @@ async def process_media_download(update: Update, context: ContextTypes.DEFAULT_T
             "📤 [██████████] **১০০%** বটে ফাইল আপলোড হচ্ছে..."
         ]
         for frame in frames:
-            await asyncio.sleep(1.2)
+            await asyncio.sleep(1.0)
             try: 
                 await status_msg.edit_text(frame, parse_mode="Markdown")
             except Exception: 
@@ -421,23 +429,13 @@ async def process_media_download(update: Update, context: ContextTypes.DEFAULT_T
                 'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
                 'nocheckcertificate': True,
                 'ignoreerrors': False,
-                'extractor_args': {
-                    'youtube': {
-                        'player_client': ['android', 'mweb', 'web_creator'],
-                    }
-                }
             }
 
-            # Cookies File Check
-            if os.path.exists("cookies.txt"):
-                ydl_opts_dl['cookiefile'] = "cookies.txt"
-
-            # Format Selector Logic
             if format_type == "video":
-                ydl_opts_dl['format'] = 'bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4] / bestvideo+bestaudio/best'
+                ydl_opts_dl['format'] = 'bestvideo+bestaudio/best'
                 ydl_opts_dl['merge_output_format'] = 'mp4'
             else:
-                ydl_opts_dl['format'] = 'ba/best'
+                ydl_opts_dl['format'] = 'bestaudio/best'
 
             with yt_dlp.YoutubeDL(ydl_opts_dl) as ydl_dl:
                 dl_info = ydl_dl.extract_info(url, download=True)
