@@ -4,6 +4,12 @@ import logging
 import asyncio
 import threading
 from flask import Flask
+
+# ==================== FFMPEG AUTO-SETUP ====================
+# Render-এ ffmpeg এরর ফিক্স করার জন্য
+import static_ffmpeg
+static_ffmpeg.add_paths()
+
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
@@ -409,7 +415,7 @@ async def process_media_download(update: Update, context: ContextTypes.DEFAULT_T
         def check_and_download():
             out_tmpl = f"downloads/{user_id}_%(id)s.%(ext)s"
             
-            # 🛠️ Fixed Options for yt-dlp
+            # YouTube & Media Download Options
             ydl_opts_dl = {
                 'outtmpl': out_tmpl,
                 'quiet': True,
@@ -424,11 +430,11 @@ async def process_media_download(update: Update, context: ContextTypes.DEFAULT_T
                 }
             }
 
-            # 🍪 Cookies Support Check
+            # Cookies ফাইল থাকলে অটোমেটিক এড হবে
             if os.path.exists("cookies.txt"):
                 ydl_opts_dl['cookiefile'] = "cookies.txt"
 
-            # 🛠️ Format fix for YouTube Shorts & normal videos
+            # Format config
             if format_type == "video":
                 ydl_opts_dl['format'] = 'b/bestvideo+bestaudio/best'
             else:
